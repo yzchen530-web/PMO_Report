@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>客服接聽量分析工具</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; margin: 30px; background-color: #f4f7f6; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
+        .upload-area { border: 2px dashed #2ecc71; padding: 25px; text-align: center; border-radius: 10px; background: #fbfffc; cursor: pointer; }
+        .btn { background: #2ecc71; color: white; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; display: inline-block; }
+        #chart { width: 100%; height: 600px; margin-top: 20px; }
+        .info { font-size: 14px; color: #666; margin-top: 10px; line-height: 1.6; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>📞 客服個別接聽量 - 年度熱點分析</h1>
+    <div class="info">
+        💡 <b>使用說明：</b> 此工具固定讀取 Excel 檔案的 <b>第 2 個分頁</b>。<br>
+        請確認標題包含：<strong>日期、人員、個別接聽量</strong>
+    </div>
+    <br>
+    <div class="upload-area" onclick="document.getElementById('excel-file').click()">
+        <span class="btn">選擇 Excel 檔案</span>
+        <input type="file" id="excel-file" accept=".xlsx, .xls">
+        <div id="status" style="margin-top:10px;">尚未上傳檔案</div>
+    </div>
+
+    <div id="chart"></div>
+</div>
+
+<script>
+    document.getElementById('excel-file').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        document.getElementById('status').innerText = `讀取中：${file.name}`;
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+            
+            // --- 只讀取第二張工作表 ---
+            const secondSheetName = workbook.SheetNames[1]; 
+            if (!secondSheetName) {
+                alert("錯誤：這份檔案似乎沒有第二張工作表！");
+                return;
+            }
+            
+            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[secondSheetName]);
+            
+            // 資料轉換與清洗
+            const processedData = rawData.map(row => {
+                let d = row['日期'];
+                let monthLabel = "未知";
+                
+                if (d instanceof Date) {
+                    monthLabel = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+                }
+                
+                return {
+                    month: monthLabel,
+                    name: row['人員'],
+                    value: parseInt(row['個別接聽量']) || 0
+                };
+            }).filter(d => d.month !== "未知" && d.name);
+
+            drawHeatmap(processedData);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function drawHeatmap(data) {
+        const months = [...new Set(data.map(d => d.month))].sort();
+        const names = [...new Set(data.map(d => d.name))];
+        
+        const zValues = names.map(name => {
+            return months.map(month => {
+                return data.filter(d => d.name === name && d.month === month)
+                           .reduce((sum, curr) => sum + curr.value, 0);
+            });
+        });
+
+        const trace = {
+            z: zValues,
+            x: months,
+            y: names,
+            type: 'heatmap',
+            colorscale: 'Portland', 
+            colorbar: { title: '接聽量' }
+        };
+
+        const layout = {
+            title: '客服人員每月接聽量分佈',
+            xaxis: { title: '月份' },
+            yaxis: { title: '客服人員', autorange: 'reversed' },
+            margin: { l: 120 }
+        };
+
+        Plotly.newPlot('chart', [trace], layout, {responsive: true});
+        document.getElementById('status').innerText = "✅ 分析完畢！";
+    }
+</script>
+
+</body>
+</html>
