@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客服中心服務量績效分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        :root {
+            --primary-bg: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-main: #2c3e50;
+            --text-light: #7f8c8d;
+            --border-color: #ecf0f1;
+            --accent-color: #0E438A;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--primary-bg);
+            margin: 0;
+            padding: 20px;
+            color: var(--text-main);
+            box-sizing: border-box;
+        }
+
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 0 10px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header-title {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--text-main);
+        }
+
+        .column-title {
+            font-size: 1.65em;
+            font-weight: 900; 
+            color: #0E438A; 
+            margin: 0 0 15px 0;
+            padding: 10px 15px;
+            border-left: 8px solid #D83A2C; 
+            border-bottom: 3px solid #c8d6e5;
+            background-color: rgba(14, 67, 138, 0.04); 
+            border-radius: 6px 6px 0 0;
+            letter-spacing: 1px;
+            text-shadow: 1px 1px 0px rgba(255,255,255,0.5);
+        }
+
+        .upload-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #fff;
+            padding: 10px 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .upload-btn {
+            background-color: var(--accent-color);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95em;
+            font-weight: bold;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        .upload-btn:hover { background-color: #0b346e;
+        }
+        .upload-btn:active { transform: scale(0.98);
+        }
+
+        .sheet-selector {
+            padding: 9px 15px;
+            border-radius: 8px;
+            border: 2px solid var(--accent-color);
+            font-size: 0.95em;
+            font-weight: bold;
+            color: var(--accent-color);
+            background-color: #fff;
+            cursor: pointer;
+            outline: none;
+            min-width: 180px;
+        }
+
+        .sheet-selector:disabled {
+            border-color: #bdc3c7;
+            background-color: #ecf0f1;
+            color: #7f8c8d;
+            cursor: not-allowed;
+        }
+
+        .dashboard {
+            display: grid;
+            /* 使用 minmax(0, Xfr) 可以防止內部圖表把欄位異常撐大，強制鎖死 1:2:1 比例 */
+            grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+            gap: 20px;
+            height: calc(100vh - 120px);
+            min-height: 800px;
+        }
+
+        .col { display: flex;
+            flex-direction: column; gap: 15px; height: 100%; }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .center-col {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--text-main);
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 8px;
+        }
+
+        p { margin: 0 0 8px 0; line-height: 1.5; font-size: 0.95em;
+        }
+        .chart-container { flex: 1; width: 100%; min-height: 160px;
+        }
+        #heatmap { flex: 1; width: 100%; min-height: 500px;
+        }
+        .highlight { color: #D83A2C; font-weight: bold; font-size: 1.2em;
+        }
+        .badge { color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.85em;
+            display: inline-block; margin-bottom: 5px; }
+        .insight-text { font-size: 0.85em; color: var(--text-light); margin-top: auto;
+            padding-top: 10px; border-top: 1px dashed #ccc; }
+
+        @media (max-width: 1200px) {
+            .dashboard { grid-template-columns: 1fr;
+                height: auto; }
+            #heatmap { min-height: 600px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <div class="header-title">📞 客服中心服務量績效分析</div>
+        <div class="upload-area">
+            <label for="excelFileInput" class="upload-btn">📂 上傳 Excel/CSV</label>
+            <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" style="display: none;">
+            <select id="sheetSelector" class="sheet-selector" disabled>
+              
+                <option value="">請先上傳檔案...</option>
+            </select>
+            <span id="fileName" style="font-size: 0.9em; color: var(--text-light); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="col">
+            <div class="column-title">核心接聽分布與人員表現</div>
+            <div class="card" style="flex: 0.8;">
+    <div class="card-header">📊 數據溫度計：熱力圖說明</div>
+    <p style="margin-bottom: 5px;"><b>熱力圖</b> 就像數據溫度計，改用「顏色」一眼秒懂接聽負載：</p>
+    <p style="margin: 5px 0 10px 0; font-size: 0.9em;">🧊 <b>深藍(極低)</b> → 🟢 <b>黃綠(中)</b> → 🔥 <b>磚紅(極高)</b></p>
+    <p class="insight-text" style="margin-top: 5px;">💡X 軸 <b style="color:#D83A2C;">紅字</b> 為假日(包含國定假日)。為呈現真實節奏，兩側趨勢圖已排除假日數據。</p>
+</div>
+            <div class="card" style="flex: 1.5;">
+                <div class="card-header">🏆 高產出核心人員</div>
+                <p>最佳表現人員：<span class="highlight" id="topPersonName">-</span></p>
+                <p>全區間累計(含假日)：<b id="topPersonTotal" style="color:#2c3e50;">-</b></p>
+            
+                <div id="topPersonChart" class="chart-container"></div>
+            </div>
+            <div class="card" style="flex: 1.2;">
+                <div class="card-header">⚖️ 人力資源差異分配</div>
+                <p style="margin-bottom: 0;">極端負載比較 (最高 vs 團隊平均 vs 最低)：</p>
+                <div id="resourceChart" class="chart-container" style="min-height: 140px;"></div>
+      
+                <p class="insight-text">⚠️首尾產能落差若過大，顯示工作分配集中風險，需適時介入輔導或排班。</p>
+            </div>
+        </div>
+
+        <div class="center-col">
+            <h3 style="text-align: center; margin: 0 0 10px 0; color: #34495e;">
+                人員接聽量熱力圖分佈 <span id="timeUnitTitle" style="font-size: 0.85em; color:#D83A2C;"></span>
+            </h3>
+            <div id="heatmap"></div>
+        </div>
+
+        <div class="col">
+            <div class="column-title">趨勢與成長動向</div>
+            <div class="card" style="flex: 1.2;">
+                <div class="card-header">👥 人力動員趨勢</div>
+            
+                <p style="margin-bottom: 0;">實際上線(有接聽)人數平滑曲線：</p>
+                <div id="activePersonChart" class="chart-container" style="min-height: 140px;"></div>
+            </div>
+            <div class="card" style="flex: 1.4;">
+                <div class="card-header">📈 接聽高峰分析</div>
+                <p>全區間最高峰時間(含假日)：<span class="highlight" id="peakTimeName">-</span></p>
+           
+                <p>該時段接聽總量：<b id="peakTimeTotal" style="color:#2c3e50;">-</b></p>
+                <div id="peakTimeChart" class="chart-container"></div>
+            </div>
+            <div class="card" style="flex: 0.8;">
+                <div class="card-header">🎖️ 人員表現分級摘要</div>
+                <div id="gradesContainer" style="overflow-y: auto; font-size: 0.92em; color: #95a5a6;">等待資料載入...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // ★ 中華民國 2025 及 2026 年國定假日與補班日設定表 ★
+        // =========================================================================
+        const TAIWAN_HOLIDAYS = [
+            // --- 2025 年 ---
+            "2025-01-01", // 元旦
+            "2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31", // 春節連假 (含小年夜、除夕)
+            "2025-02-28", // 和平紀念日
+            "2025-04-03", "2025-04-04", // 兒童節、清明節 (4/3提早放)
+            "2025-05-01", // 勞動節
+            "2025-05-30", // 端午節
+            "2025-09-29", // 教師節補假
+            "2025-10-06", // 中秋節
+            "2025-10-10", // 國慶日
+            "2025-10-24", // 光復節補假
+            "2025-12-25", // 行憲紀念日
+            
+            // --- 2026 年 ---
+            "2026-01-01", // 元旦
+            "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", // 春節連假 (含除夕及小年夜補假)
+            "2026-02-27", // 228 補假
+            "2026-04-03", "2026-04-06", // 兒童節補假、清明節補假
+            "2026-05-01", // 勞動節
+            "2026-06-19", // 端午節
+            "2026-09-25", // 中秋節
+            "2026-09-28", // 教師節
+            "2026-10-09", // 國慶補假
+            "2026-10-26", // 光復節補假
+            "2026-12-25"  // 行憲紀念日
+        ];
+        
+        // 補班日 (需視為平日，圖表不剔除且顯示黑字)
+        const TAIWAN_MAKEUP_WORKDAYS = [
+            "2025-02-08" // 2025 春節補班
+        ];
+        
+        const myChart = echarts.init(document.getElementById('heatmap'));
+        const topChart = echarts.init(document.getElementById('topPersonChart'));
+        const resourceChart = echarts.init(document.getElementById('resourceChart'));
+        const activeChart = echarts.init(document.getElementById('activePersonChart'));
+        const peakChart = echarts.init(document.getElementById('peakTimeChart'));
+        const colorScale = ['#0E438A', '#48989B', '#F6D746', '#EF9D3F', '#D83A2C'];
+
+        const emptyOption = { title: { text: '請點擊上方按鈕上傳 Excel/CSV 資料檔', left: 'center', top: 'center', textStyle: { color: '#bdc3c7', fontSize: 16, fontWeight: 'normal' } } };
+        myChart.setOption(emptyOption); topChart.setOption(emptyOption); resourceChart.setOption(emptyOption);
+        activeChart.setOption(emptyOption); peakChart.setOption(emptyOption);
+
+        let currentWorkbook = null;
+        let csvParsedData = null; 
+        let isCurrentFileCsv = false;
+        
+        document.getElementById('excelFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('fileName').innerText = file.name;
+            e.target.value = ''; 
+            
+            const fileExt = file.name.split('.').pop().toLowerCase();
+            const sheetSelector = document.getElementById('sheetSelector');
+
+            if (fileExt === 'csv') {
+                isCurrentFileCsv = true;
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    Papa.parse(evt.target.result, {
+                        header: true, skipEmptyLines: true,
+                        complete: function(results) {
+                            csvParsedData = results.data;
+                            sheetSelector.innerHTML = '<option value="csv_default">📋 預設頁籤 (CSV)</option>';
+                            sheetSelector.disabled = false;
+                            analyzeData('csv_default'); 
+                        }
+                    });
+                };
+                reader.readAsText(file); 
+            } else {
+                isCurrentFileCsv = false;
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        currentWorkbook = XLSX.read(data, {type: 'array', cellDates: true});
+                        sheetSelector.innerHTML = '';
+                        if (currentWorkbook.SheetNames.length === 0) throw new Error("無頁籤");
+                        currentWorkbook.SheetNames.forEach(name => {
+                            const opt = document.createElement('option');
+                            opt.value = name;
+                            opt.textContent = `📋 頁籤：${name}`;
+                            sheetSelector.appendChild(opt);
+                        });
+                        sheetSelector.disabled = false;
+                        analyzeData(currentWorkbook.SheetNames[0]);
+                    } catch (error) {
+                        console.error(error);
+                        alert("Excel 解析發生錯誤，請確認檔案格式是否正確。");
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        document.getElementById('sheetSelector').addEventListener('change', function(e) {
+            analyzeData(e.target.value);
+        });
+        
+        function analyzeData(sheetName) {
+            let data = [];
+            if (isCurrentFileCsv) {
+                data = csvParsedData;
+            } else {
+                const worksheet = currentWorkbook.Sheets[sheetName];
+                data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
+            }
+            
+            if(!data || data.length === 0) {
+                alert(`資料讀取失敗或內容為空！`);
+                return;
+            }
+
+            let rawParsedData = [];
+            let uniqueMonths = new Set();
+
+            data.forEach(row => {
+                let dateStr = row['日期'] || row['date'] || row['Date'] || row[Object.keys(row)[0]];
+                let person = row['人員'] || row['person'] || row['Person'] || row[Object.keys(row)[1]];
+                let valStr = row['個別接聽量'] || row['接聽量'] || row['calls'] || row[Object.keys(row)[2]];
+                
+                if(!dateStr || !person || valStr == null) return;
+                
+                let dateObj = new Date(dateStr);
+                if (isNaN(dateObj.getTime())) return;
+                
+                let val = parseInt(valStr, 10);
+                if (isNaN(val)) return;
+
+                let monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                let dateKey = `${monthKey}-${String(dateObj.getDate()).padStart(2, '0')}`;
+                
+                uniqueMonths.add(monthKey);
+                rawParsedData.push({ monthKey, dateKey, person, val });
+            });
+            
+            if(rawParsedData.length === 0) {
+                alert('無法解析資料，請確認第一列的欄位名稱是否有「日期」、「人員」、「個別接聽量」');
+                return;
+            }
+
+            let isYearly = true;
+            if (sheetName.includes('月') && !sheetName.includes('年')) {
+                isYearly = false;
+            } else if (sheetName.includes('年')) {
+                isYearly = true;
+            } else {
+                isYearly = uniqueMonths.size > 1;
+            }
+
+            let heatmapMap = {}; let personSum = {};
+            let timeSum = {};
+            let timePersons = {}; let timeKeysSet = new Set(); let personsSet = new Set();
+            
+            rawParsedData.forEach(d => {
+                let timeKey = isYearly ? d.monthKey : d.dateKey;
+                timeKeysSet.add(timeKey);
+                personsSet.add(d.person);
+
+                let mapKey = `${timeKey}_${d.person}`;
+                heatmapMap[mapKey] = (heatmapMap[mapKey] || 0) + d.val;
+                personSum[d.person] = (personSum[d.person] || 0) + d.val;
+                timeSum[timeKey] = (timeSum[timeKey] || 0) + d.val;
+                
+                if (!timePersons[timeKey]) timePersons[timeKey] = new Set();
+                timePersons[timeKey].add(d.person);
+            });
+
+            const timeLabels = Array.from(timeKeysSet).sort();
+            const persons = Array.from(personsSet).sort();
+            
+            let heatmapData = [];
+            timeLabels.forEach((t, tIdx) => {
+                persons.forEach((p, pIdx) => {
+                    let val = heatmapMap[`${t}_${p}`] || 0; 
+                    heatmapData.push([tIdx, pIdx, val]);
+                });
+            });
+            
+            let sortedPersons = Object.keys(personSum).map(p => ({person: p, sum: personSum[p]})).sort((a,b) => b.sum - a.sum);
+            let topPerson = sortedPersons[0].person;
+            let topPersonTotal = sortedPersons[0].sum;
+            let minPerson = sortedPersons[sortedPersons.length-1].person; let minPersonTotal = sortedPersons[sortedPersons.length-1].sum;
+            let meanTotal = sortedPersons.reduce((acc, curr) => acc + curr.sum, 0) / sortedPersons.length;
+            let sortedTimes = Object.keys(timeSum).map(t => ({time: t, sum: timeSum[t]})).sort((a,b) => b.sum - a.sum);
+            let peakTime = sortedTimes[0].time;
+            let peakTimeTotal = sortedTimes[0].sum;
+            
+            let topPersonTimeline = timeLabels.map(t => heatmapMap[`${t}_${topPerson}`] || 0);
+            let allTimesTotal = timeLabels.map(t => timeSum[t] || 0);
+            let activePersonsList = timeLabels.map(t => ({time: t, count: timePersons[t].size}));
+
+            let gradeThresholdA = Math.round(meanTotal * 1.2);
+            let gradeThresholdB = Math.round(meanTotal * 0.8);
+            
+            let grades = { A: [], B: [], C: [] };
+            sortedPersons.forEach(p => {
+                if(p.sum >= gradeThresholdA) grades.A.push(p.person);
+                else if(p.sum >= gradeThresholdB) grades.B.push(p.person);
+                else grades.C.push(p.person);
+            });
+            
+            // 判斷是否為假日 (六日 + 國定假日 - 補班日)
+            const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+            let isHolidayList = [];
+            let displayTimeLabels = [];
+            let tooltipFullLabels = [];
+            // 給 Tooltip 看的完整日期
+
+            timeLabels.forEach(t => {
+                if (isYearly) {
+                    isHolidayList.push(false);
+                    displayTimeLabels.push(t);
+                    tooltipFullLabels.push(t);
+                } else {
+                    let d = new Date(t);
+                    let day = d.getDay();
+                    let isWeekend = (day === 0 || day === 6);
+                    let isNational = TAIWAN_HOLIDAYS.includes(t);
+                    let isMakeup = TAIWAN_MAKEUP_WORKDAYS.includes(t);
+                    
+                    // 假日判定：(週末且非補班) 或是 國定放假日
+                    isHolidayList.push((isWeekend && !isMakeup) || isNational);
+
+                    // X 軸僅保留 DD 跟星期幾
+                    let dd = String(d.getDate()).padStart(2, '0');
+                    let dw = dayNames[day];
+                    displayTimeLabels.push(`${dd}\n(${dw})`);
+                    tooltipFullLabels.push(`${t} (${dw})`);
+                }
+            });
+            
+            // 取得單月的年月份字串，用來放進標題
+            let singleMonthLabel = "";
+            if (!isYearly) {
+                let firstMonth = Array.from(uniqueMonths)[0];
+                // 例: "2026-02"
+                let parts = firstMonth.split('-');
+                singleMonthLabel = `${parts[0]}年${parts[1]}月`;
+            }
+
+            updateUI({ 
+                isYearly, timeLabels, displayTimeLabels, tooltipFullLabels, isHolidayList, singleMonthLabel,
+                persons, heatmapData, topPerson, topPersonTotal, topPersonTimeline, 
+                minPerson, minPersonTotal, meanTotal, peakTime, peakTimeTotal, allTimesTotal, 
+                activePersonsList, grades, thresholds: { A: gradeThresholdA, B: gradeThresholdB }
+            });
+        }
+
+        function updateUI(parsed) {
+            myChart.clear();
+            topChart.clear(); resourceChart.clear(); activeChart.clear(); peakChart.clear();
+
+            // 設定標題 (單月會顯示 年月)
+            document.getElementById('timeUnitTitle').innerText = parsed.isYearly ? '(依月份分析)' : `(${parsed.singleMonthLabel})`;
+
+            // 總計不變 (仍然包含假日)
+            document.getElementById('topPersonName').innerText = parsed.topPerson;
+            document.getElementById('topPersonTotal').innerText = parsed.topPersonTotal.toLocaleString() + ' 通';
+            
+            let peakTimeIdx = parsed.timeLabels.indexOf(parsed.peakTime);
+            document.getElementById('peakTimeName').innerText = parsed.tooltipFullLabels[peakTimeIdx];
+            document.getElementById('peakTimeTotal').innerText = parsed.peakTimeTotal.toLocaleString() + ' 通';
+            
+            // 加入 new Option(字串).innerHTML 防禦 XSS 攻擊
+            document.getElementById('gradesContainer').innerHTML = `
+                <div style="margin-bottom: 12px;"><span class="badge A" style="background-color: #D83A2C;">A級 (高於平均20%: &ge; ${parsed.thresholds.A}通)</span><p style="margin: 3px 0 0 5px; font-weight: bold; color: #2c3e50;">${new Option(parsed.grades.A.join(', ') || '無').innerHTML}</p></div>
+                <div style="margin-bottom: 12px;"><span class="badge B" style="background-color: #EF9D3F;">B級 (平均區間: ${parsed.thresholds.B}~${parsed.thresholds.A}通)</span><p style="margin: 3px 0 0 5px; font-weight: bold; color: #2c3e50;">${new Option(parsed.grades.B.join(', ') || '無').innerHTML}</p></div>
+                <div><span class="badge C" style="background-color: #48989B;">C級 (低於平均20%: &lt; ${parsed.thresholds.B}通)</span><p style="margin: 3px 0 0 5px; font-weight: bold; color: #2c3e50;">${new Option(parsed.grades.C.join(', ') || '無').innerHTML}</p></div>
+            `;
+
+            let maxVal = Math.max(...parsed.heatmapData.map(d => d[2]));
+            if(!isFinite(maxVal) || maxVal === 0) maxVal = 1000;
+
+            // 1. 熱力圖 (完整顯示每一天，X軸見紅休字體變紅)
+            myChart.setOption({
+                tooltip: {
+                    position: 'top',
+                    formatter: function (p) {
+                        return `<b>${parsed.tooltipFullLabels[p.value[0]]}</b><br/>人員: ${parsed.persons[p.value[1]]}<br/>接聽量: <b style="color:#D83A2C;">${p.value[2]}</b> 通`;
+                    }
+                },
+                grid: { top: '5%', right: '5%', left: '15%', bottom: '20%' },
+                xAxis: { 
+                    type: 'category', 
+                    data: parsed.displayTimeLabels, 
+                    splitArea: { show: true }, 
+                    axisLabel: { 
+                        interval: 0, 
+                        // 利用 index 找出是否為假日
+                        color: function(value, index) { return parsed.isHolidayList[index] ? '#D83A2C' : '#333'; }
+                    } 
+                },
+                yAxis: { type: 'category', data: parsed.persons, splitArea: { show: true }, name: '人員' },
+                visualMap: {
+                    min: 0, max: maxVal, calculable: true, orient: 'horizontal',
+                    left: 'center', bottom: '1%', text: ['極高', '極低'], inRange: { color: colorScale }
+                },
+                series: [{
+                    type: 'heatmap', 
+                    data: parsed.heatmapData,
+                    label: { 
+                        show: true, 
+                        formatter: function(params) {
+                            let val = params.value[2];
+                            if (val < maxVal * 0.20 || val > maxVal * 0.80) return '{white|' + val + '}';
+                            else return '{black|' + val + '}';
+                        },
+                        rich: { white: { color: '#ffffff', fontSize: 11, fontWeight: 'bold' }, black: { color: '#000000', fontSize: 11, fontWeight: 'bold' } }
+                    },
+                    itemStyle: { borderColor: '#fff', borderWidth: 1 }
+                }]
+            });
+            
+            // 產生專屬「平日」的圖表數據陣列 (若單月分析，過濾掉假日)
+            let chartLabels = [];
+            let chartTopPersonData = [];
+            let chartActiveData = [];
+            let chartPeakData = [];
+            
+            parsed.displayTimeLabels.forEach((label, i) => {
+                // 如果是單月分析，且遇到假日，則直接跳過不畫
+                if (!parsed.isYearly && parsed.isHolidayList[i]) return; 
+
+                // 將 \n 換成空白以適應曲線圖的 X 軸
+                chartLabels.push(label.replace('\n', '')); 
+                chartTopPersonData.push(parsed.topPersonTimeline[i]);
+                chartActiveData.push(parsed.activePersonsList[i].count);
+                chartPeakData.push(parsed.allTimesTotal[i]);
+            });
+            
+            // 2. 高產出核心人員 (平日平滑曲線圖)
+            topChart.setOption({
+                tooltip: { trigger: 'axis' }, grid: { top: 15, right: 15, left: 45, bottom: 45 },
+                xAxis: { type: 'category', data: chartLabels, axisLabel: { show: true, interval: 'auto', fontSize: 10, color: '#333' } }, 
+                yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
+                series: [{ 
+                    data: chartTopPersonData, type: 'line', smooth: true, 
+                    itemStyle: { color: '#D83A2C' },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(216,58,44,0.4)' }, { offset: 1, color: 'rgba(216,58,44,0.05)' }]) }
+                }]
+            });
+            
+            // 3. 人力資源差異圖
+            resourceChart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } }, grid: { top: 10, right: 120, left: 70, bottom: 20 },
+                xAxis: { type: 'value', splitLine: { show: false }, show: false }, 
+                yAxis: { type: 'category', data: ['最低產出', '團隊平均', '最高產出'], axisLine: {show: false}, axisTick: {show: false} },
+                series: [{ type: 'bar', data: [{ value: parsed.minPersonTotal, name: parsed.minPerson, itemStyle: { color: '#0E438A', borderRadius: [0, 5, 5, 0] } }, { value: Math.round(parsed.meanTotal), name: '平均值', itemStyle: { color: '#F6D746', borderRadius: [0, 5, 5, 0] } }, { value: parsed.topPersonTotal, name: parsed.topPerson, itemStyle: { color: '#D83A2C', borderRadius: [0, 5, 5, 0] } }], label: { show: true, position: 'right', formatter: function(p) { return p.data.name + ' (' + p.value + '通)'; }, fontSize: 11, color: '#333' } }]
+            });
+            
+            // 4. 人力動員趨勢 (平日平滑曲線圖)
+            activeChart.setOption({
+                tooltip: { trigger: 'axis' }, grid: { top: 25, right: 15, left: 35, bottom: 45 },
+                xAxis: { type: 'category', data: chartLabels, axisLabel: { show: true, interval: 'auto', fontSize: 10, color: '#333' } }, 
+                yAxis: { type: 'value', min: 0, splitLine: { lineStyle: { type: 'dashed' } }, minInterval: 1 },
+                series: [{ 
+                    data: chartActiveData, type: 'line', smooth: true, 
+                    itemStyle: { color: '#48989B' }, 
+                    areaStyle: { color: 'rgba(72, 152, 155, 0.15)' },
+                    label: { show: true, position: 'top', formatter: '{c} 人', fontSize: 10 } 
+                }]
+            });
+            
+            // 5. 接聽高峰分析圖 (平日平滑曲線圖 + 最高峰水滴標籤)
+            peakChart.setOption({
+                tooltip: { trigger: 'axis' }, grid: { top: 20, right: 15, left: 45, bottom: 45 },
+                xAxis: { type: 'category', data: chartLabels, axisLabel: { show: true, interval: 'auto', fontSize: 10, color: '#333' } }, 
+                yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
+                series: [{ 
+                    data: chartPeakData, type: 'line', smooth: true, 
+                    itemStyle: { color: '#D83A2C' }, 
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(216,58,44,0.4)' }, { offset: 1, color: 'rgba(216,58,44,0.05)' }]) },
+                    markPoint: {
+                        data: [{ type: 'max', name: '最高峰' }],
+                        itemStyle: { color: '#0E438A' },
+                        label: { color: '#fff', fontSize: 10 }
+                    }
+                }]
+            });
+        }
+
+        window.addEventListener('resize', function() {
+            myChart.resize(); topChart.resize(); resourceChart.resize(); activeChart.resize(); peakChart.resize();
+        });
+    </script>
+</body>
+</html>
